@@ -1,0 +1,101 @@
+#!/bin/bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DOTFILES_REPO_URL="${DOTFILES_REPO_URL:-https://github.com/jfahrer/dotfiles}"
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+
+progress() {
+  printf '\n==> %s\n' "$*"
+}
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  printf '%s\n' "error: dev-mac supports macOS only." >&2
+  exit 1
+fi
+
+progress "macOS $(sw_vers -productVersion) on $(uname -m)"
+
+if ! xcode-select -p >/dev/null 2>&1; then
+  progress "Requesting the Xcode Command Line Tools"
+  xcode-select --install 2>/dev/null || true
+  printf '%s\n' \
+    "Complete the installation in Apple's dialog, then rerun script/bootstrap."
+  exit 1
+fi
+
+progress "Accepting the Xcode license when applicable"
+license_output="$(sudo xcodebuild -license accept 2>&1)" || {
+  if [[ "$license_output" == *"requires Xcode"* ||
+        "$license_output" == *"active developer directory"* ||
+        "$license_output" == *"not a developer tool"* ]]; then
+    printf '%s\n' "Full Xcode is not installed; the Xcode license step is not applicable."
+  else
+    printf '%s\n' "$license_output" >&2
+    exit 1
+  fi
+}
+
+if ! command -v brew >/dev/null 2>&1; then
+  progress "Installing Homebrew"
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  # Homebrew's installer registers its bin directory with macOS path_helper.
+  # Reload that system-managed path instead of assuming an Intel or Apple
+  # Silicon installation prefix.
+  eval "$(/usr/libexec/path_helper -s)"
+  hash -r
+fi
+
+if ! command -v brew >/dev/null 2>&1; then
+  printf '%s\n' "error: Homebrew installed but is not on PATH. Follow the installer's shellenv instruction, then rerun." >&2
+  exit 1
+fi
+eval "$(brew shellenv)"
+
+progress "Installing Brewfile dependencies"
+brew bundle --file "$REPO_ROOT/Brewfile"
+
+if [[ -e "$DOTFILES_DIR" ]]; then
+  if ! git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'error: %s exists but is not a Git checkout; leaving it untouched.\n' "$DOTFILES_DIR" >&2
+    exit 1
+  fi
+  progress "Using existing dotfiles checkout at $DOTFILES_DIR"
+  if [[ -n "$(git -C "$DOTFILES_DIR" status --porcelain)" ]]; then
+    printf '%s\n' "Dotfiles contain local changes; they will be preserved."
+  fi
+else
+  progress "Cloning dotfiles into $DOTFILES_DIR"
+  git clone "$DOTFILES_REPO_URL" "$DOTFILES_DIR"
+fi
+
+if [[ ! -x "$DOTFILES_DIR/script/setup" ]]; then
+  printf 'error: expected executable %s/script/setup; leaving the checkout untouched.\n' "$DOTFILES_DIR" >&2
+  exit 1
+fi
+
+progress "Applying dotfiles"
+"$DOTFILES_DIR/script/setup"
+
+progress "Installing tools declared in mise configuration"
+mise install
+
+"$SCRIPT_DIR/security"
+"$SCRIPT_DIR/macos-defaults"
+
+progress "Installing available macOS updates (the Mac will not restart automatically)"
+update_output="$(sudo softwareupdate --install --all --agree-to-license 2>&1)" || {
+  printf '%s\n' "$update_output" >&2
+  exit 1
+}
+printf '%s\n' "$update_output"
+if [[ "$update_output" == *"restart"* || "$update_output" == *"Restart"* ]]; then
+  printf '%s\n' "A restart is required; complete it after reviewing MANUAL.md."
+fi
+
+"$SCRIPT_DIR/verify"
+
+progress "Bootstrap complete"
+printf 'Finish the manual checklist in %s/MANUAL.md\n' "$REPO_ROOT"

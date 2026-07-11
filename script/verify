@@ -1,0 +1,108 @@
+#!/bin/bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+failures=0
+
+ok() { printf 'ok: %s\n' "$*"; }
+fail() { printf 'missing: %s\n' "$*" >&2; failures=$((failures + 1)); }
+
+if command -v brew >/dev/null 2>&1; then
+  ok "Homebrew"
+  if brew bundle check --file "$REPO_ROOT/Brewfile" >/dev/null 2>&1; then
+    ok "every Brewfile dependency"
+  else
+    fail "one or more Brewfile dependencies (run: brew bundle --file '$REPO_ROOT/Brewfile')"
+    brew bundle check --verbose --file "$REPO_ROOT/Brewfile" || true
+  fi
+else
+  fail "Homebrew"
+fi
+
+if git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  ok "dotfiles Git checkout"
+else
+  fail "dotfiles Git checkout at $DOTFILES_DIR"
+fi
+
+linked_dotfile=""
+while IFS= read -r candidate; do
+  target="$(readlink "$candidate" 2>/dev/null || true)"
+  if [[ "$target" == "$DOTFILES_DIR"/* || "$target" == *"$(basename "$DOTFILES_DIR")/"* ]]; then
+    linked_dotfile="$candidate"
+    break
+  fi
+done < <(find "$HOME" -maxdepth 3 -type l 2>/dev/null)
+if [[ -n "$linked_dotfile" ]]; then
+  ok "rcm-managed dotfile link ($linked_dotfile)"
+else
+  fail "a representative symlink into $DOTFILES_DIR (rerun its script/setup)"
+fi
+
+mise_config="$HOME/.config/mise/config.toml"
+if command -v mise >/dev/null 2>&1 && [[ -f "$mise_config" ]] &&
+   mise config ls --no-header 2>/dev/null | grep -Fq ".config/mise/config.toml"; then
+  ok "mise discovers $mise_config"
+else
+  fail "mise discovery of $mise_config"
+fi
+
+if sudo grep -Eq '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so([[:space:]]|$)' /etc/pam.d/sudo_local 2>/dev/null; then
+  ok "Touch ID for sudo"
+else
+  fail "active Touch ID line in /etc/pam.d/sudo_local"
+fi
+
+if [[ "$(defaults read com.apple.screensaver askForPassword 2>/dev/null || true)" == "1" &&
+      "$(defaults read com.apple.screensaver askForPasswordDelay 2>/dev/null || true)" == "0" ]]; then
+  ok "immediate screen-lock password"
+else
+  fail "immediate screen-lock password"
+fi
+
+firewall_status="$(sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null || true)"
+if [[ "$firewall_status" == *"enabled"* ]]; then ok "application firewall"; else fail "application firewall"; fi
+
+recovery_message="$(sudo defaults read /Library/Preferences/com.apple.loginwindow LoginwindowText 2>/dev/null || true)"
+if [[ "$recovery_message" == "Found this computer? Please contact "* && "$recovery_message" == *"." ]]; then
+  ok "login-window recovery message"
+else
+  fail "login-window recovery message"
+fi
+
+filevault_status="$(sudo fdesetup status 2>/dev/null || true)"
+if { [[ "$filevault_status" == *"FileVault is On"* ]] || [[ "$filevault_status" == *"Encryption in progress"* ]]; } &&
+   [[ "$(sudo fdesetup haspersonalrecoverykey 2>/dev/null || true)" == "true" ]]; then
+  ok "FileVault and personal recovery key"
+else
+  fail "FileVault enabled/in progress with a personal recovery key"
+fi
+
+defaults_ok=true
+[[ "$(defaults read NSGlobalDomain com.apple.keyboard.fnState 2>/dev/null || true)" == "1" ]] || defaults_ok=false
+[[ "$(defaults read NSGlobalDomain KeyRepeat 2>/dev/null || true)" == "1" ]] || defaults_ok=false
+[[ "$(defaults read NSGlobalDomain AppleKeyboardUIMode 2>/dev/null || true)" == "3" ]] || defaults_ok=false
+[[ "$(defaults read com.apple.TimeMachine DoNotOfferNewDisksForBackup 2>/dev/null || true)" == "1" ]] || defaults_ok=false
+[[ "$(defaults read com.apple.menuextra.clock DateFormat 2>/dev/null || true)" == "EEE MMM d  h:mm:ss a" ]] || defaults_ok=false
+[[ "$(sudo defaults read /Library/Preferences/com.apple.loginwindow showInputMenu 2>/dev/null || true)" == "1" ]] || defaults_ok=false
+if [[ "$defaults_ok" == "true" ]]; then
+  ok "required macOS defaults"
+else
+  fail "one or more required macOS defaults (rerun script/macos-defaults)"
+fi
+
+updates="$(softwareupdate --list 2>&1 || true)"
+if [[ "$updates" == *"No new software available"* ]]; then
+  ok "no pending macOS updates"
+else
+  fail "pending macOS updates (review: softwareupdate --list)"
+fi
+
+if ((failures > 0)); then
+  printf '\nVerification failed with %d missing outcome(s).\n' "$failures" >&2
+  exit 1
+fi
+printf '\nAll required outcomes verified.\n'

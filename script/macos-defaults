@@ -1,0 +1,42 @@
+#!/bin/bash
+
+set -euo pipefail
+
+progress() {
+  printf '\n==> %s\n' "$*"
+}
+
+verify_user_default() {
+  local domain="$1" key="$2" expected="$3" actual
+  if ! actual="$(defaults read "$domain" "$key" 2>/dev/null)"; then
+    printf 'warning: %s %s is unavailable on this macOS release; skipped.\n' "$domain" "$key" >&2
+    return 0
+  fi
+  if [[ "$actual" != "$expected" ]]; then
+    printf 'error: %s %s expected %s, got %s.\n' "$domain" "$key" "$expected" "$actual" >&2
+    return 1
+  fi
+}
+
+progress "Applying macOS keyboard, Time Machine, and clock defaults"
+defaults write NSGlobalDomain com.apple.keyboard.fnState -bool true
+defaults write NSGlobalDomain KeyRepeat -int 1
+defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
+defaults write com.apple.TimeMachine DoNotOfferNewDisksForBackup -bool true
+defaults write com.apple.menuextra.clock DateFormat -string "EEE MMM d  h:mm:ss a"
+sudo defaults write /Library/Preferences/com.apple.loginwindow showInputMenu -bool true
+
+verify_user_default NSGlobalDomain com.apple.keyboard.fnState 1
+verify_user_default NSGlobalDomain KeyRepeat 1
+verify_user_default NSGlobalDomain AppleKeyboardUIMode 3
+verify_user_default com.apple.TimeMachine DoNotOfferNewDisksForBackup 1
+verify_user_default com.apple.menuextra.clock DateFormat "EEE MMM d  h:mm:ss a"
+if [[ "$(sudo defaults read /Library/Preferences/com.apple.loginwindow showInputMenu 2>/dev/null)" != "1" ]]; then
+  printf '%s\n' "error: login-window input menu could not be verified; it may need to be supplied by MDM." >&2
+  exit 1
+fi
+
+progress "Restarting the affected preference service (no reboot)"
+killall cfprefsd 2>/dev/null || true
+
+progress "macOS defaults verified"

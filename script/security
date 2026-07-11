@@ -1,0 +1,104 @@
+#!/bin/bash
+
+set -euo pipefail
+
+progress() {
+  printf '\n==> %s\n' "$*"
+}
+
+progress "Configuring Touch ID for sudo"
+if [[ ! -e /etc/pam.d/sudo_local ]]; then
+  if [[ ! -e /etc/pam.d/sudo_local.template ]]; then
+    printf '%s\n' "error: /etc/pam.d/sudo_local.template is unavailable; configure Touch ID manually." >&2
+    exit 1
+  fi
+  sudo cp /etc/pam.d/sudo_local.template /etc/pam.d/sudo_local
+fi
+sudo sed -i '' -E 's/^[[:space:]]*#[[:space:]]*(auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so.*)$/\1/' /etc/pam.d/sudo_local
+if ! sudo grep -Eq '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so([[:space:]]|$)' /etc/pam.d/sudo_local; then
+  printf '%s\n' "error: Touch ID PAM configuration could not be verified." >&2
+  exit 1
+fi
+
+progress "Requiring the screen-lock password immediately"
+defaults write com.apple.screensaver askForPassword -int 1
+defaults write com.apple.screensaver askForPasswordDelay -int 0
+[[ "$(defaults read com.apple.screensaver askForPassword)" == "1" ]]
+[[ "$(defaults read com.apple.screensaver askForPasswordDelay)" == "0" ]]
+
+progress "Enabling the application firewall"
+firewall_output="$(sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on 2>&1)" || {
+  printf '%s\n' "$firewall_output" >&2
+  printf '%s\n' "This setting may be managed by MDM; ask the administrator to enable the application firewall." >&2
+  exit 1
+}
+firewall_status="$(sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate)"
+if [[ "$firewall_status" != *"enabled"* ]]; then
+  printf '%s\n' "error: firewall is not enabled. If this Mac is managed, MDM must supply this setting." >&2
+  exit 1
+fi
+
+if [[ -z "${RECOVERY_CONTACT:-}" ]]; then
+  progress "Setting the login-window recovery message"
+  if [[ ! -r /dev/tty ]]; then
+    printf '%s\n' "error: set RECOVERY_CONTACT and rerun script/security." >&2
+    exit 1
+  fi
+  read -r -p "Recovery contact (email or phone; it will be shown at login): " RECOVERY_CONTACT </dev/tty
+fi
+if [[ -z "$RECOVERY_CONTACT" || "$RECOVERY_CONTACT" == *$'\n'* ]]; then
+  printf '%s\n' "error: RECOVERY_CONTACT must be a nonempty single line." >&2
+  exit 1
+fi
+recovery_message="Found this computer? Please contact ${RECOVERY_CONTACT}."
+sudo defaults write /Library/Preferences/com.apple.loginwindow LoginwindowText "$recovery_message"
+stored_message="$(sudo defaults read /Library/Preferences/com.apple.loginwindow LoginwindowText)"
+if [[ "$stored_message" != "$recovery_message" ]]; then
+  printf '%s\n' "error: the login-window recovery message could not be verified." >&2
+  exit 1
+fi
+
+progress "Checking FileVault"
+filevault_status="$(sudo fdesetup status)"
+if [[ "$filevault_status" == *"FileVault is Off"* ]]; then
+  printf '%s\n' "FileVault will prompt for the current administrator password."
+  recovery_file="$HOME/Desktop/FileVault Recovery Key.txt"
+  if [[ -e "$recovery_file" ]]; then
+    printf 'error: %s already exists; preserving it. Move it to secure off-device storage, delete it, and rerun.\n' "$recovery_file" >&2
+    exit 1
+  fi
+  mkdir -p "$HOME/Desktop"
+  plist_file="$(mktemp -t dev-mac-filevault)"
+  chmod 600 "$plist_file"
+  trap 'rm -f "$plist_file"' EXIT
+  # The invoking user owns this private temporary file; sudo is needed only by
+  # fdesetup, not by the shell redirection.
+  # shellcheck disable=SC2024
+  sudo fdesetup enable -user "$USER" -outputplist >"$plist_file"
+  recovery_key="$(/usr/libexec/PlistBuddy -c 'Print :RecoveryKey' "$plist_file" 2>/dev/null || true)"
+  if [[ -z "$recovery_key" ]]; then
+    printf '%s\n' "error: FileVault was enabled, but its personal recovery key could not be saved. Check FileVault settings now." >&2
+    exit 1
+  fi
+  (umask 077; printf '%s\n' "$recovery_key" >"$recovery_file")
+  unset recovery_key
+  chmod 600 "$recovery_file"
+  rm -f "$plist_file"
+  trap - EXIT
+  printf 'The recovery key was saved to %s (mode 0600). Follow MANUAL.md immediately.\n' "$recovery_file"
+else
+  printf '%s\n' "FileVault is already on or encryption is in progress; no Desktop recovery-key file was created."
+fi
+
+filevault_status="$(sudo fdesetup status)"
+if [[ "$filevault_status" != *"FileVault is On"* &&
+      "$filevault_status" != *"Encryption in progress"* ]]; then
+  printf 'error: unexpected FileVault status: %s\n' "$filevault_status" >&2
+  exit 1
+fi
+if [[ "$(sudo fdesetup haspersonalrecoverykey)" != "true" ]]; then
+  printf '%s\n' "error: FileVault has no personal recovery key. Create one in System Settings and store it safely." >&2
+  exit 1
+fi
+
+progress "Security settings verified"
