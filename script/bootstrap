@@ -38,6 +38,23 @@ license_output="$(sudo xcodebuild -license accept 2>&1)" || {
   fi
 }
 
+account_name="$(id -un)"
+current_shell="$(dscacheutil -q user -a name "$account_name" |
+  awk '$1 == "shell:" { print $2; exit }')"
+if [[ "$current_shell" != "/bin/bash" ]]; then
+  progress "Changing the default login shell to /bin/bash"
+  printf '%s\n' "macOS may prompt for the current account password. The new shell applies to new terminal sessions."
+  chsh -s /bin/bash "$account_name"
+  current_shell="$(dscacheutil -q user -a name "$account_name" |
+    awk '$1 == "shell:" { print $2; exit }')"
+  if [[ "$current_shell" != "/bin/bash" ]]; then
+    printf '%s\n' "error: the default login shell could not be verified; run: chsh -s /bin/bash" >&2
+    exit 1
+  fi
+else
+  progress "Default login shell is already /bin/bash"
+fi
+
 if ! command -v brew >/dev/null 2>&1; then
   progress "Installing Homebrew"
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"

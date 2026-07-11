@@ -44,6 +44,15 @@ else
   fail "Homebrew"
 fi
 
+account_name="$(id -un)"
+login_shell="$(dscacheutil -q user -a name "$account_name" |
+  awk '$1 == "shell:" { print $2; exit }')"
+if [[ "$login_shell" == "/bin/bash" ]]; then
+  ok "default login shell is /bin/bash"
+else
+  fail "default login shell /bin/bash (run: chsh -s /bin/bash)"
+fi
+
 if git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   ok "dotfiles Git checkout"
 else

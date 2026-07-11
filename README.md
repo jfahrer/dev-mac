@@ -4,6 +4,8 @@ Bootstrap a personal Mac with Homebrew, public dotfiles, `rcm`, and `mise`.
 Scripts are safe to rerun: they do not clean packages, overwrite conflicting
 files, reset Git changes, or restart the Mac.
 
+The bootstrap uses macOS's built-in `/bin/bash` as the default login shell.
+
 ## Install
 
 Run the public entry point on a new Mac:
