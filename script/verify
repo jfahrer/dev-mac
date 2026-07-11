@@ -5,12 +5,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
-BASH_IT_DIR="${BASH_IT_DIR:-$HOME/.bash_it}"
+BASH_IT_DIR="${BASH_IT_DIR:-$HOME/.bash-it}"
 failures=0
 
 ok() { printf 'ok: %s\n' "$*"; }
 fail() { printf 'missing: %s\n' "$*" >&2; failures=$((failures + 1)); }
 warn() { printf 'warning: %s\n' "$*" >&2; }
+
+dock_has_persistent_app() {
+  local label="$1"
+  dockutil --list 2>/dev/null |
+    awk -F '\t' -v label="$label" '$1 == label && $3 == "persistentApps" { found = 1 } END { exit !found }'
+}
 
 read_symbolic_hotkey_value() {
   local key_path="$1"
@@ -19,19 +25,22 @@ read_symbolic_hotkey_value() {
 }
 
 verify_internal_caps_lock() {
-  local device vendor_id product_id preference_key key_path mapping
+  local device vendor_id product_id preference_key key_path mapping live_mapping
   device="$(hidutil list --ndjson --matching keyboard 2>/dev/null |
     grep -m 1 '"Built-In":true' || true)"
   if [[ -z "$device" ]]; then
     return 0
   fi
-  vendor_id="$(printf '%s\n' "$device" | plutil -extract VendorID raw -o - -)"
-  product_id="$(printf '%s\n' "$device" | plutil -extract ProductID raw -o - -)"
+  vendor_id="$(printf '%s\n' "$device" | plutil -extract VendorID raw -o - - 2>/dev/null || printf 0)"
+  product_id="$(printf '%s\n' "$device" | plutil -extract ProductID raw -o - - 2>/dev/null || printf 0)"
   preference_key="com.apple.keyboard.modifiermapping.${vendor_id}-${product_id}-0"
   key_path="${preference_key//./\\.}"
   mapping="$(defaults -currentHost export NSGlobalDomain - 2>/dev/null |
     plutil -extract "$key_path" json -o - - 2>/dev/null || true)"
-  [[ "$mapping" == *'"HIDKeyboardModifierMappingDst":30064771300,"HIDKeyboardModifierMappingSrc":30064771129'* ]]
+  live_mapping="$(hidutil property --get UserKeyMapping 2>/dev/null || true)"
+  [[ "$mapping" == *'"HIDKeyboardModifierMappingDst":30064771300,"HIDKeyboardModifierMappingSrc":30064771129'* &&
+     "$live_mapping" == *'HIDKeyboardModifierMappingDst = 30064771300'* &&
+     "$live_mapping" == *'HIDKeyboardModifierMappingSrc = 30064771129'* ]]
 }
 
 if command -v brew >/dev/null 2>&1; then
@@ -108,18 +117,20 @@ else
       dock_ok=false
     fi
   done
-  if ! dockutil --find "Brave Browser" >/dev/null 2>&1; then
-    dock_ok=false
-  fi
+  for dock_item in "Brave Browser" Ghostty 1Password; do
+    if ! dock_has_persistent_app "$dock_item"; then
+      dock_ok=false
+    fi
+  done
 fi
 if [[ "$dock_ok" == "true" ]]; then
-  ok "Brave Browser present and unwanted applications removed from the Dock"
+  ok "Brave Browser, Ghostty, and 1Password present and unwanted applications removed from the Dock"
 else
   fail "Dock cleanup or dockutil (rerun script/macos-defaults)"
 fi
 
 if verify_internal_caps_lock; then
-  ok "internal-keyboard Caps Lock mapped to Control"
+  ok "internal-keyboard Caps Lock mapped to Control persistently and in the current session"
 else
   warn "persistent internal-keyboard Caps Lock-to-Control mapping is unresolved; configure it in System Settings"
 fi

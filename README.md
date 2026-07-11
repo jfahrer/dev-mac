@@ -43,5 +43,5 @@ verification again at any time with `~/.dev-mac/script/verify`.
 The dotfiles repository owns shell/editor configuration, its `rcm` setup,
 bash-it activation and component choices, and gloal mise configuration.
 
-This repository installs Bash-it at `~/.bash_it` without modifying local
+This repository installs Bash-it at `~/.bash-it` without modifying local
 configs.

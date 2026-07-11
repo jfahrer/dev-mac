@@ -12,6 +12,22 @@ read_plist_value() {
     plutil -extract "$key_path" raw -o - - 2>/dev/null
 }
 
+configure_symbolic_hotkeys() {
+  local plist
+  plist="$(mktemp "${TMPDIR:-/tmp}/dev-mac-symbolichotkeys.XXXXXX")"
+  defaults export com.apple.symbolichotkeys "$plist"
+
+  plutil -replace 'AppleSymbolicHotKeys.64.enabled' -bool true "$plist"
+  plutil -replace 'AppleSymbolicHotKeys.64.value.type' -string standard "$plist"
+  plutil -replace 'AppleSymbolicHotKeys.64.value.parameters' \
+    -json '[32,49,786432]' "$plist"
+  plutil -replace 'AppleSymbolicHotKeys.32.enabled' -bool false "$plist"
+  plutil -replace 'AppleSymbolicHotKeys.33.enabled' -bool false "$plist"
+
+  defaults import com.apple.symbolichotkeys "$plist"
+  rm -f "$plist"
+}
+
 verify_user_default() {
   local domain="$1" key="$2" expected="$3" actual
   if ! actual="$(defaults read "$domain" "$key" 2>/dev/null)"; then
@@ -24,6 +40,12 @@ verify_user_default() {
   fi
 }
 
+dock_has_persistent_app() {
+  local label="$1"
+  dockutil --list 2>/dev/null |
+    awk -F '\t' -v label="$label" '$1 == label && $3 == "persistentApps" { found = 1 } END { exit !found }'
+}
+
 configure_internal_caps_lock() {
   local device vendor_id product_id preference_key key_path current_mapping mapping attempt
   device="$(hidutil list --ndjson --matching keyboard 2>/dev/null |
@@ -33,24 +55,18 @@ configure_internal_caps_lock() {
     return 0
   fi
 
-  vendor_id="$(printf '%s\n' "$device" | plutil -extract VendorID raw -o - -)"
-  product_id="$(printf '%s\n' "$device" | plutil -extract ProductID raw -o - -)"
+  # Apple Silicon built-in keyboards may omit these fields. System Settings
+  # addresses those keyboards with the 0-0 device identifier.
+  vendor_id="$(printf '%s\n' "$device" | plutil -extract VendorID raw -o - - 2>/dev/null || printf 0)"
+  product_id="$(printf '%s\n' "$device" | plutil -extract ProductID raw -o - - 2>/dev/null || printf 0)"
   preference_key="com.apple.keyboard.modifiermapping.${vendor_id}-${product_id}-0"
   key_path="${preference_key//./\\.}"
   current_mapping="$(defaults -currentHost export NSGlobalDomain - 2>/dev/null |
     plutil -extract "$key_path" json -o - - 2>/dev/null || true)"
   mapping='{ HIDKeyboardModifierMappingDst = 30064771300; HIDKeyboardModifierMappingSrc = 30064771129; }'
 
-  if [[ "$current_mapping" == *'"HIDKeyboardModifierMappingSrc":30064771129'* ]]; then
-    if [[ "$current_mapping" != *'"HIDKeyboardModifierMappingDst":30064771300,"HIDKeyboardModifierMappingSrc":30064771129'* ]]; then
-      printf '%s\n' "error: the internal keyboard already has a conflicting Caps Lock mapping; preserving it." >&2
-      return 1
-    fi
-  elif [[ -n "$current_mapping" ]]; then
-    defaults -currentHost write NSGlobalDomain "$preference_key" -array-add "$mapping"
-  else
-    defaults -currentHost write NSGlobalDomain "$preference_key" -array "$mapping"
-  fi
+  # Replace this device's array so reruns cannot accumulate duplicate mappings.
+  defaults -currentHost write NSGlobalDomain "$preference_key" -array "$mapping"
 
   attempt=0
   while ((attempt < 5)); do
@@ -73,17 +89,8 @@ defaults write NSGlobalDomain KeyRepeat -int 1
 defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
 defaults write com.apple.TimeMachine DoNotOfferNewDisksForBackup -bool true
 defaults write com.apple.menuextra.clock DateFormat -string "EEE MMM d  h:mm:ss a"
-if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 64 \
-  '{ enabled = 1; value = { parameters = (32, 49, 786432); type = standard; }; }'; then
+if ! configure_symbolic_hotkeys; then
   printf '%s\n' "warning: Spotlight shortcut could not be written; continuing." >&2
-fi
-if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 32 \
-  '{ enabled = 0; }'; then
-  printf '%s\n' "warning: Mission Control Control-Up shortcut could not be disabled; continuing." >&2
-fi
-if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 33 \
-  '{ enabled = 0; }'; then
-  printf '%s\n' "warning: Mission Control Control-Down shortcut could not be disabled; continuing." >&2
 fi
 sudo defaults write /Library/Preferences/com.apple.loginwindow showInputMenu -bool true
 
@@ -99,10 +106,12 @@ for dock_item in Maps Mail Music Pages Numbers TV Keynote Phone Games; do
   fi
 done
 
-progress "Adding Brave Browser to the Dock"
-if ! dockutil --find "Brave Browser" >/dev/null 2>&1; then
-  dockutil --add "/Applications/Brave Browser.app" --no-restart
-fi
+progress "Adding preferred applications to the Dock"
+for dock_app in "Brave Browser" Ghostty 1Password; do
+  if ! dock_has_persistent_app "$dock_app"; then
+    dockutil --add "/Applications/$dock_app.app" --no-restart
+  fi
+done
 
 verify_user_default NSGlobalDomain com.apple.keyboard.fnState 1
 verify_user_default NSGlobalDomain KeyRepeat 1
@@ -128,5 +137,10 @@ progress "Restarting affected preference services (no reboot)"
 killall cfprefsd 2>/dev/null || true
 killall SystemUIServer 2>/dev/null || true
 killall Dock 2>/dev/null || true
+
+# Service restarts can clear the session mapping, so apply it last.
+hidutil property --set \
+  '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":30064771129,"HIDKeyboardModifierMappingDst":30064771300}]}' \
+  >/dev/null
 
 progress "macOS defaults verified"

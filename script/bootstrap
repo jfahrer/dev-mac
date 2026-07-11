@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTFILES_REPO_URL="${DOTFILES_REPO_URL:-https://github.com/jfahrer/dotfiles}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 BASH_IT_REPO_URL="${BASH_IT_REPO_URL:-https://github.com/Bash-it/bash-it.git}"
-BASH_IT_DIR="${BASH_IT_DIR:-$HOME/.bash_it}"
+BASH_IT_DIR="${BASH_IT_DIR:-$HOME/.bash-it}"
 
 progress() {
   printf '\n==> %s\n' "$*"
