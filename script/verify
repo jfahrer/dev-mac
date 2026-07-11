@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+BASH_IT_DIR="${BASH_IT_DIR:-$HOME/.bash_it}"
 failures=0
 
 ok() { printf 'ok: %s\n' "$*"; }
@@ -51,6 +52,22 @@ if [[ "$login_shell" == "/bin/bash" ]]; then
   ok "default login shell is /bin/bash"
 else
   fail "default login shell /bin/bash (run: chsh -s /bin/bash)"
+fi
+
+if git -C "$BASH_IT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+   [[ -r "$BASH_IT_DIR/bash_it.sh" ]]; then
+  ok "Bash-it checkout"
+else
+  fail "Bash-it checkout at $BASH_IT_DIR"
+fi
+
+bash_it_login_check="$(/bin/bash -lic \
+  'if [[ -n ${BASH_IT:-} && -r ${BASH_IT}/bash_it.sh ]]; then printf __DEV_MAC_BASH_IT_ACTIVE__; fi' \
+  2>/dev/null || true)"
+if [[ "$bash_it_login_check" == *"__DEV_MAC_BASH_IT_ACTIVE__"* ]]; then
+  ok "Bash-it activation in the login shell"
+else
+  fail "Bash-it activation (the dotfiles-managed Bash startup must source \$BASH_IT/bash_it.sh)"
 fi
 
 if git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then

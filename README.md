@@ -33,12 +33,15 @@ verification again at any time with `~/.dev-mac/script/verify`.
 
 - `DOTFILES_REPO_URL` changes the dotfiles clone URL.
 - `DOTFILES_DIR` changes the dotfiles checkout location.
+- `BASH_IT_REPO_URL` changes the Bash-it clone URL.
+- `BASH_IT_DIR` changes the Bash-it checkout location.
 - `RECOVERY_CONTACT` supplies the email address or phone shown at login. If it
   is omitted, the security script prompts for it. Never commit the value here.
 - `DEV_MAC_REPO_URL` and `DEV_MAC_DIR` can point the public installer at a fork
   or a different checkout directory.
 
-The dotfiles repository owns shell/editor configuration, its `rcm` setup, and
-`~/.config/mise/config.toml`. Project tool versions belong in project-local
-`mise.toml` or `.tool-versions` files. This repository never runs Homebrew
-cleanup automatically.
+The dotfiles repository owns shell/editor configuration, its `rcm` setup,
+bash-it activation and component choices, and gloal mise configuration.
+
+This repository installs Bash-it at `~/.bash_it` without modifying local
+configs.
