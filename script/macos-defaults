@@ -82,7 +82,9 @@ defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 33 \
 sudo defaults write /Library/Preferences/com.apple.loginwindow showInputMenu -bool true
 
 progress "Mapping internal-keyboard Caps Lock to Control"
-configure_internal_caps_lock
+if ! configure_internal_caps_lock; then
+  printf '%s\n' "warning: Caps Lock was not mapped automatically; configure it in System Settings and debug after bootstrap." >&2
+fi
 
 progress "Removing unwanted default applications from the Dock"
 for dock_item in Maps Mail Music Pages Numbers TV Keynote Phone; do

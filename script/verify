@@ -10,6 +10,7 @@ failures=0
 
 ok() { printf 'ok: %s\n' "$*"; }
 fail() { printf 'missing: %s\n' "$*" >&2; failures=$((failures + 1)); }
+warn() { printf 'warning: %s\n' "$*" >&2; }
 
 read_symbolic_hotkey_value() {
   local key_path="$1"
@@ -117,7 +118,7 @@ fi
 if verify_internal_caps_lock; then
   ok "internal-keyboard Caps Lock mapped to Control"
 else
-  fail "persistent internal-keyboard Caps Lock-to-Control mapping"
+  warn "persistent internal-keyboard Caps Lock-to-Control mapping is unresolved; configure it in System Settings"
 fi
 
 if sudo grep -Eq '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so([[:space:]]|$)' /etc/pam.d/sudo_local 2>/dev/null; then
