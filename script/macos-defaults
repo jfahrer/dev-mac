@@ -25,7 +25,7 @@ verify_user_default() {
 }
 
 configure_internal_caps_lock() {
-  local device vendor_id product_id preference_key key_path current_mapping mapping
+  local device vendor_id product_id preference_key key_path current_mapping mapping attempt
   device="$(hidutil list --ndjson --matching keyboard 2>/dev/null |
     grep -m 1 '"Built-In":true' || true)"
   if [[ -z "$device" ]]; then
@@ -52,12 +52,19 @@ configure_internal_caps_lock() {
     defaults -currentHost write NSGlobalDomain "$preference_key" -array "$mapping"
   fi
 
-  current_mapping="$(defaults -currentHost export NSGlobalDomain - |
-    plutil -extract "$key_path" json -o - -)"
-  if [[ "$current_mapping" != *'"HIDKeyboardModifierMappingDst":30064771300,"HIDKeyboardModifierMappingSrc":30064771129'* ]]; then
-    printf '%s\n' "error: persistent Caps Lock-to-Control mapping could not be verified." >&2
-    return 1
-  fi
+  attempt=0
+  while ((attempt < 5)); do
+    current_mapping="$(defaults -currentHost export NSGlobalDomain - 2>/dev/null |
+      plutil -extract "$key_path" json -o - - 2>/dev/null || true)"
+    if [[ "$current_mapping" == *'"HIDKeyboardModifierMappingDst":30064771300,"HIDKeyboardModifierMappingSrc":30064771129'* ]]; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+
+  printf '%s\n' "error: persistent Caps Lock-to-Control mapping could not be verified." >&2
+  return 1
 }
 
 progress "Applying macOS keyboard, Spotlight, Mission Control, Time Machine, and clock defaults"
