@@ -93,11 +93,16 @@ if ! configure_internal_caps_lock; then
 fi
 
 progress "Removing unwanted default applications from the Dock"
-for dock_item in Maps Mail Music Pages Numbers TV Keynote Phone; do
+for dock_item in Maps Mail Music Pages Numbers TV Keynote Phone Games; do
   if dockutil --find "$dock_item" >/dev/null 2>&1; then
     dockutil --remove "$dock_item" --no-restart
   fi
 done
+
+progress "Adding Brave Browser to the Dock"
+if ! dockutil --find "Brave Browser" >/dev/null 2>&1; then
+  dockutil --add "/Applications/Brave Browser.app" --no-restart
+fi
 
 verify_user_default NSGlobalDomain com.apple.keyboard.fnState 1
 verify_user_default NSGlobalDomain KeyRepeat 1

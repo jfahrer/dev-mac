@@ -103,14 +103,17 @@ dock_ok=true
 if ! command -v dockutil >/dev/null 2>&1; then
   dock_ok=false
 else
-  for dock_item in Maps Mail Music Pages Numbers TV Keynote Phone; do
+  for dock_item in Maps Mail Music Pages Numbers TV Keynote Phone Games; do
     if dockutil --find "$dock_item" >/dev/null 2>&1; then
       dock_ok=false
     fi
   done
+  if ! dockutil --find "Brave Browser" >/dev/null 2>&1; then
+    dock_ok=false
+  fi
 fi
 if [[ "$dock_ok" == "true" ]]; then
-  ok "unwanted default applications removed from the Dock"
+  ok "Brave Browser present and unwanted applications removed from the Dock"
 else
   fail "Dock cleanup or dockutil (rerun script/macos-defaults)"
 fi
