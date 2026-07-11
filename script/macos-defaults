@@ -6,6 +6,12 @@ progress() {
   printf '\n==> %s\n' "$*"
 }
 
+read_plist_value() {
+  local key_path="$1"
+  defaults export com.apple.symbolichotkeys - 2>/dev/null |
+    plutil -extract "$key_path" raw -o - - 2>/dev/null
+}
+
 verify_user_default() {
   local domain="$1" key="$2" expected="$3" actual
   if ! actual="$(defaults read "$domain" "$key" 2>/dev/null)"; then
@@ -18,25 +24,91 @@ verify_user_default() {
   fi
 }
 
-progress "Applying macOS keyboard, Time Machine, and clock defaults"
+configure_internal_caps_lock() {
+  local device vendor_id product_id preference_key key_path current_mapping mapping
+  device="$(hidutil list --ndjson --matching keyboard 2>/dev/null |
+    grep -m 1 '"Built-In":true' || true)"
+  if [[ -z "$device" ]]; then
+    printf '%s\n' "No internal keyboard detected; Caps Lock mapping is not applicable."
+    return 0
+  fi
+
+  vendor_id="$(printf '%s\n' "$device" | plutil -extract VendorID raw -o - -)"
+  product_id="$(printf '%s\n' "$device" | plutil -extract ProductID raw -o - -)"
+  preference_key="com.apple.keyboard.modifiermapping.${vendor_id}-${product_id}-0"
+  key_path="${preference_key//./\\.}"
+  current_mapping="$(defaults -currentHost export NSGlobalDomain - 2>/dev/null |
+    plutil -extract "$key_path" json -o - - 2>/dev/null || true)"
+  mapping='{ HIDKeyboardModifierMappingDst = 30064771300; HIDKeyboardModifierMappingSrc = 30064771129; }'
+
+  if [[ "$current_mapping" == *'"HIDKeyboardModifierMappingSrc":30064771129'* ]]; then
+    if [[ "$current_mapping" != *'"HIDKeyboardModifierMappingDst":30064771300,"HIDKeyboardModifierMappingSrc":30064771129'* ]]; then
+      printf '%s\n' "error: the internal keyboard already has a conflicting Caps Lock mapping; preserving it." >&2
+      return 1
+    fi
+  elif [[ -n "$current_mapping" ]]; then
+    defaults -currentHost write NSGlobalDomain "$preference_key" -array-add "$mapping"
+  else
+    defaults -currentHost write NSGlobalDomain "$preference_key" -array "$mapping"
+  fi
+
+  current_mapping="$(defaults -currentHost export NSGlobalDomain - |
+    plutil -extract "$key_path" json -o - -)"
+  if [[ "$current_mapping" != *'"HIDKeyboardModifierMappingDst":30064771300,"HIDKeyboardModifierMappingSrc":30064771129'* ]]; then
+    printf '%s\n' "error: persistent Caps Lock-to-Control mapping could not be verified." >&2
+    return 1
+  fi
+}
+
+progress "Applying macOS keyboard, Spotlight, Mission Control, Time Machine, and clock defaults"
 defaults write NSGlobalDomain com.apple.keyboard.fnState -bool true
 defaults write NSGlobalDomain KeyRepeat -int 1
 defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
 defaults write com.apple.TimeMachine DoNotOfferNewDisksForBackup -bool true
 defaults write com.apple.menuextra.clock DateFormat -string "EEE MMM d  h:mm:ss a"
+defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 64 \
+  '{ enabled = 1; value = { parameters = (32, 49, 786432); type = standard; }; }'
+defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 32 \
+  '{ enabled = 0; }'
+defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 33 \
+  '{ enabled = 0; }'
 sudo defaults write /Library/Preferences/com.apple.loginwindow showInputMenu -bool true
+
+progress "Mapping internal-keyboard Caps Lock to Control"
+configure_internal_caps_lock
+
+progress "Removing unwanted default applications from the Dock"
+for dock_item in Maps Mail Music Pages Numbers TV Keynote Phone; do
+  if dockutil --find "$dock_item" >/dev/null 2>&1; then
+    dockutil --remove "$dock_item" --no-restart
+  fi
+done
 
 verify_user_default NSGlobalDomain com.apple.keyboard.fnState 1
 verify_user_default NSGlobalDomain KeyRepeat 1
 verify_user_default NSGlobalDomain AppleKeyboardUIMode 3
 verify_user_default com.apple.TimeMachine DoNotOfferNewDisksForBackup 1
 verify_user_default com.apple.menuextra.clock DateFormat "EEE MMM d  h:mm:ss a"
+if [[ "$(read_plist_value 'AppleSymbolicHotKeys.64.enabled' || true)" != "true" ||
+      "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.0' || true)" != "32" ||
+      "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.1' || true)" != "49" ||
+      "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.2' || true)" != "786432" ]]; then
+  printf '%s\n' "error: Spotlight shortcut expected Control-Option-Space." >&2
+  exit 1
+fi
+if [[ "$(read_plist_value 'AppleSymbolicHotKeys.32.enabled' || true)" != "false" ||
+      "$(read_plist_value 'AppleSymbolicHotKeys.33.enabled' || true)" != "false" ]]; then
+  printf '%s\n' "error: Mission Control Control-Up/Down shortcuts are still enabled." >&2
+  exit 1
+fi
 if [[ "$(sudo defaults read /Library/Preferences/com.apple.loginwindow showInputMenu 2>/dev/null)" != "1" ]]; then
   printf '%s\n' "error: login-window input menu could not be verified; it may need to be supplied by MDM." >&2
   exit 1
 fi
 
-progress "Restarting the affected preference service (no reboot)"
+progress "Restarting affected preference services (no reboot)"
 killall cfprefsd 2>/dev/null || true
+killall SystemUIServer 2>/dev/null || true
+killall Dock 2>/dev/null || true
 
 progress "macOS defaults verified"
