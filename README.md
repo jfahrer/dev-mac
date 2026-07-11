@@ -35,6 +35,8 @@ verification again at any time with `~/.dev-mac/script/verify`.
 - `DOTFILES_DIR` changes the dotfiles checkout location.
 - `BASH_IT_REPO_URL` changes the Bash-it clone URL.
 - `BASH_IT_DIR` changes the Bash-it checkout location.
+- `TPM_REPO_URL` changes the tmux plugin manager clone URL.
+- `TPM_DIR` changes the tmux plugin manager checkout location.
 - `RECOVERY_CONTACT` supplies the email address or phone shown at login. If it
   is omitted, the security script prompts for it. Never commit the value here.
 - `DEV_MAC_REPO_URL` and `DEV_MAC_DIR` can point the public installer at a fork
@@ -44,4 +46,5 @@ The dotfiles repository owns shell/editor configuration, its `rcm` setup,
 bash-it activation and component choices, and gloal mise configuration.
 
 This repository installs Bash-it at `~/.bash-it` without modifying local
-configs.
+configs. It also installs the tmux plugin manager and the plugins declared by
+the dotfiles-managed tmux configuration.

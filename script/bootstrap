@@ -8,6 +8,8 @@ DOTFILES_REPO_URL="${DOTFILES_REPO_URL:-https://github.com/jfahrer/dotfiles}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 BASH_IT_REPO_URL="${BASH_IT_REPO_URL:-https://github.com/Bash-it/bash-it.git}"
 BASH_IT_DIR="${BASH_IT_DIR:-$HOME/.bash-it}"
+TPM_REPO_URL="${TPM_REPO_URL:-https://github.com/tmux-plugins/tpm.git}"
+TPM_DIR="${TPM_DIR:-$HOME/.tmux/plugins/tpm}"
 
 progress() {
   printf '\n==> %s\n' "$*"
@@ -95,6 +97,23 @@ if [[ ! -r "$BASH_IT_DIR/bash_it.sh" ]]; then
   exit 1
 fi
 
+if [[ -e "$TPM_DIR" ]]; then
+  if ! git -C "$TPM_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'error: %s exists but is not a Git checkout; leaving it untouched.\n' "$TPM_DIR" >&2
+    exit 1
+  fi
+  progress "Using existing tmux plugin manager checkout at $TPM_DIR"
+else
+  progress "Cloning tmux plugin manager into $TPM_DIR"
+  mkdir -p "$(dirname "$TPM_DIR")"
+  git clone --depth=1 "$TPM_REPO_URL" "$TPM_DIR"
+fi
+
+if [[ ! -x "$TPM_DIR/bin/install_plugins" ]]; then
+  printf 'error: expected executable %s/bin/install_plugins; leaving the checkout untouched.\n' "$TPM_DIR" >&2
+  exit 1
+fi
+
 if [[ -e "$DOTFILES_DIR" ]]; then
   if ! git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     printf 'error: %s exists but is not a Git checkout; leaving it untouched.\n' "$DOTFILES_DIR" >&2
@@ -116,6 +135,9 @@ fi
 
 progress "Applying dotfiles"
 "$DOTFILES_DIR/script/setup"
+
+progress "Installing tmux plugins"
+"$TPM_DIR/bin/install_plugins"
 
 progress "Installing tools declared in mise configuration"
 mise install

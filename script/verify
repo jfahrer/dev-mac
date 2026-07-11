@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 BASH_IT_DIR="${BASH_IT_DIR:-$HOME/.bash-it}"
+TPM_DIR="${TPM_DIR:-$HOME/.tmux/plugins/tpm}"
 failures=0
 
 ok() { printf 'ok: %s\n' "$*"; }
@@ -78,6 +79,13 @@ if [[ "$bash_it_login_check" == *"__DEV_MAC_BASH_IT_ACTIVE__"* ]]; then
   ok "Bash-it activation in the login shell"
 else
   fail "Bash-it activation (the dotfiles-managed Bash startup must source \$BASH_IT/bash_it.sh)"
+fi
+
+if git -C "$TPM_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+   [[ -x "$TPM_DIR/bin/install_plugins" && -x "$TPM_DIR/tpm" ]]; then
+  ok "tmux plugin manager checkout"
+else
+  fail "tmux plugin manager checkout at $TPM_DIR"
 fi
 
 if git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
