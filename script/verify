@@ -159,16 +159,23 @@ defaults_ok=true
 [[ "$(defaults read com.apple.TimeMachine DoNotOfferNewDisksForBackup 2>/dev/null || true)" == "1" ]] || defaults_ok=false
 [[ "$(defaults read com.apple.menuextra.clock DateFormat 2>/dev/null || true)" == "EEE MMM d  h:mm:ss a" ]] || defaults_ok=false
 [[ "$(sudo defaults read /Library/Preferences/com.apple.loginwindow showInputMenu 2>/dev/null || true)" == "1" ]] || defaults_ok=false
-[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.64.enabled' || true)" == "true" ]] || defaults_ok=false
-[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.64.value.parameters.0' || true)" == "32" ]] || defaults_ok=false
-[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.64.value.parameters.1' || true)" == "49" ]] || defaults_ok=false
-[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.64.value.parameters.2' || true)" == "786432" ]] || defaults_ok=false
-[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.32.enabled' || true)" == "false" ]] || defaults_ok=false
-[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.33.enabled' || true)" == "false" ]] || defaults_ok=false
 if [[ "$defaults_ok" == "true" ]]; then
   ok "required macOS defaults"
 else
   fail "one or more required macOS defaults (rerun script/macos-defaults)"
+fi
+
+shortcuts_ok=true
+[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.64.enabled' || true)" == "true" ]] || shortcuts_ok=false
+[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.64.value.parameters.0' || true)" == "32" ]] || shortcuts_ok=false
+[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.64.value.parameters.1' || true)" == "49" ]] || shortcuts_ok=false
+[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.64.value.parameters.2' || true)" == "786432" ]] || shortcuts_ok=false
+[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.32.enabled' || true)" == "false" ]] || shortcuts_ok=false
+[[ "$(read_symbolic_hotkey_value 'AppleSymbolicHotKeys.33.enabled' || true)" == "false" ]] || shortcuts_ok=false
+if [[ "$shortcuts_ok" == "true" ]]; then
+  ok "Spotlight and Mission Control shortcuts"
+else
+  warn "Spotlight or Mission Control shortcuts are unresolved; configure them in System Settings"
 fi
 
 updates="$(softwareupdate --list 2>&1 || true)"

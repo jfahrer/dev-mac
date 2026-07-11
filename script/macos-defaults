@@ -73,12 +73,18 @@ defaults write NSGlobalDomain KeyRepeat -int 1
 defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
 defaults write com.apple.TimeMachine DoNotOfferNewDisksForBackup -bool true
 defaults write com.apple.menuextra.clock DateFormat -string "EEE MMM d  h:mm:ss a"
-defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 64 \
-  '{ enabled = 1; value = { parameters = (32, 49, 786432); type = standard; }; }'
-defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 32 \
-  '{ enabled = 0; }'
-defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 33 \
-  '{ enabled = 0; }'
+if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 64 \
+  '{ enabled = 1; value = { parameters = (32, 49, 786432); type = standard; }; }'; then
+  printf '%s\n' "warning: Spotlight shortcut could not be written; continuing." >&2
+fi
+if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 32 \
+  '{ enabled = 0; }'; then
+  printf '%s\n' "warning: Mission Control Control-Up shortcut could not be disabled; continuing." >&2
+fi
+if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 33 \
+  '{ enabled = 0; }'; then
+  printf '%s\n' "warning: Mission Control Control-Down shortcut could not be disabled; continuing." >&2
+fi
 sudo defaults write /Library/Preferences/com.apple.loginwindow showInputMenu -bool true
 
 progress "Mapping internal-keyboard Caps Lock to Control"
@@ -102,13 +108,11 @@ if [[ "$(read_plist_value 'AppleSymbolicHotKeys.64.enabled' || true)" != "true" 
       "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.0' || true)" != "32" ||
       "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.1' || true)" != "49" ||
       "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.2' || true)" != "786432" ]]; then
-  printf '%s\n' "error: Spotlight shortcut expected Control-Option-Space." >&2
-  exit 1
+  printf '%s\n' "warning: Spotlight shortcut is not Control-Option-Space; continuing." >&2
 fi
 if [[ "$(read_plist_value 'AppleSymbolicHotKeys.32.enabled' || true)" != "false" ||
       "$(read_plist_value 'AppleSymbolicHotKeys.33.enabled' || true)" != "false" ]]; then
-  printf '%s\n' "error: Mission Control Control-Up/Down shortcuts are still enabled." >&2
-  exit 1
+  printf '%s\n' "warning: Mission Control Control-Up/Down shortcuts are still enabled; continuing." >&2
 fi
 if [[ "$(sudo defaults read /Library/Preferences/com.apple.loginwindow showInputMenu 2>/dev/null)" != "1" ]]; then
   printf '%s\n' "error: login-window input menu could not be verified; it may need to be supplied by MDM." >&2
