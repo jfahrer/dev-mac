@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." >/dev/null && pwd)"
 DOTFILES_REPO_URL="${DOTFILES_REPO_URL:-https://github.com/jfahrer/dotfiles}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 BASH_IT_REPO_URL="${BASH_IT_REPO_URL:-https://github.com/Bash-it/bash-it.git}"
@@ -33,8 +33,8 @@ fi
 progress "Accepting the Xcode license when applicable"
 license_output="$(sudo xcodebuild -license accept 2>&1)" || {
   if [[ "$license_output" == *"requires Xcode"* ||
-        "$license_output" == *"active developer directory"* ||
-        "$license_output" == *"not a developer tool"* ]]; then
+    "$license_output" == *"active developer directory"* ||
+    "$license_output" == *"not a developer tool"* ]]; then
     printf '%s\n' "Full Xcode is not installed; the Xcode license step is not applicable."
   else
     printf '%s\n' "$license_output" >&2

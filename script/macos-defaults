@@ -118,16 +118,6 @@ verify_user_default NSGlobalDomain KeyRepeat 1
 verify_user_default NSGlobalDomain AppleKeyboardUIMode 3
 verify_user_default com.apple.TimeMachine DoNotOfferNewDisksForBackup 1
 verify_user_default com.apple.menuextra.clock DateFormat "EEE MMM d  h:mm:ss a"
-if [[ "$(read_plist_value 'AppleSymbolicHotKeys.64.enabled' || true)" != "true" ||
-      "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.0' || true)" != "32" ||
-      "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.1' || true)" != "49" ||
-      "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.2' || true)" != "786432" ]]; then
-  printf '%s\n' "warning: Spotlight shortcut is not Control-Option-Space; continuing." >&2
-fi
-if [[ "$(read_plist_value 'AppleSymbolicHotKeys.32.enabled' || true)" != "false" ||
-      "$(read_plist_value 'AppleSymbolicHotKeys.33.enabled' || true)" != "false" ]]; then
-  printf '%s\n' "warning: Mission Control Control-Up/Down shortcuts are still enabled; continuing." >&2
-fi
 if [[ "$(sudo defaults read /Library/Preferences/com.apple.loginwindow showInputMenu 2>/dev/null)" != "1" ]]; then
   printf '%s\n' "error: login-window input menu could not be verified; it may need to be supplied by MDM." >&2
   exit 1
@@ -135,8 +125,25 @@ fi
 
 progress "Restarting affected preference services (no reboot)"
 killall cfprefsd 2>/dev/null || true
+killall pbs 2>/dev/null || true
+killall Spotlight 2>/dev/null || true
 killall SystemUIServer 2>/dev/null || true
 killall Dock 2>/dev/null || true
+
+# Verify the values after all preference consumers have restarted. Checking
+# before this point can report success even when a daemon restores stale data.
+if [[ "$(read_plist_value 'AppleSymbolicHotKeys.64.enabled' || true)" != "true" ||
+      "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.0' || true)" != "32" ||
+      "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.1' || true)" != "49" ||
+      "$(read_plist_value 'AppleSymbolicHotKeys.64.value.parameters.2' || true)" != "786432" ]]; then
+  printf '%s\n' "error: Spotlight shortcut is not Control-Option-Space after preference activation." >&2
+  exit 1
+fi
+if [[ "$(read_plist_value 'AppleSymbolicHotKeys.32.enabled' || true)" != "false" ||
+      "$(read_plist_value 'AppleSymbolicHotKeys.33.enabled' || true)" != "false" ]]; then
+  printf '%s\n' "error: Mission Control Control-Up/Down shortcuts remain enabled after preference activation." >&2
+  exit 1
+fi
 
 # Service restarts can clear the session mapping, so apply it last.
 hidutil property --set \
